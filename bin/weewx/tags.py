@@ -180,6 +180,11 @@ class TimespanBinder(object):
         self.converter = converter
         self.option_dict = option_dict
 
+    # Iterate over vectors of selected aggregates of selected obs
+    def gen_vec(self, agg_interval=86400, obs_type=None, aggregates=None):
+        for vector_row in self.gen_vectors(agg_interval, obs_type, aggregates):
+            yield vector_row
+
     # Iterate over all records in the time period:
     def records(self):
         manager = self.db_lookup(self.data_binding)
@@ -264,8 +269,82 @@ class TimespanBinder(object):
         # Return an ObservationBinder: if an attribute is
         # requested from it, an aggregation value will be returned.
         return ObservationBinder(obs_type, self.timespan, self.db_lookup, self.data_binding,
-                                 self.context,
-                                 self.formatter, self.converter, **self.option_dict)
+                                 self.context, self.formatter, self.converter,
+                                 **self.option_dict)
+
+    def gen_vectors(self, agg_interval, obs_types, aggregates):
+        """Generator function to yield rows from vector aggregates.
+
+        Use a GROUP BY SQL SELECT statement to vectors of multiple aggregates
+        of multiple observation types. Yield all aggregates for all observation
+        types for a given aggregate interval timespan. Each row includes the
+        aggregate interval start timestamp and stop timestamp.
+
+        agg_interval: The interval over which the aggregate is calculated.
+        obs_types:    List of WeeWX observation types to be aggregated, eg:
+                      ['outTemp', 'outHumidity', 'radiation']
+        aggregates:   List of aggregates to be calculated for each observation
+                      type, eg: ['min', 'max', 'avg']
+        """
+
+        # Construct the aggregate portion of the SELECT string
+        # First construct the string of aggregates of obs_type calls
+        obs_str_list = []
+        for obs_type in obs_types:
+            obs_str_list += ([a + "(" + obs_type + ")" for a in aggregates])
+        # Join the individual aggregate calls to make the aggregate string
+        agg_str = ",".join(obs_str_list)
+        # Now take the template SQL string and fill in the variables to give
+        # the SQL statement we will use
+        sql_str = "SELECT MIN(dateTime)-{interval}, MAX(dateTime), " \
+                  "{agg_str} " \
+                  "FROM archive " \
+                  "WHERE dateTime>{start} AND dateTime<={stop} " \
+                  "GROUP BY DATE(dateTime-{interval},'unixepoch', 'localtime')"
+        sql_stmt = sql_str.format(interval=agg_interval,
+                                  agg_str=agg_str,
+                                  start=self.timespan.start,
+                                  stop=self.timespan.stop)
+        # Obtain a db manager
+        db_manager = self.db_lookup(self.data_binding)
+        # Iterate over the rows in the SQL query result
+        for row in db_manager.genSql(sql_stmt):
+            # Create a dict to hold our result, the result will be a dict of
+            # dicts
+            result = dict()
+            # The first two fields in our row will be the agg interval start
+            # and stop timestamps. Add each to our results as ValueHelpers. The
+            # start timestamp will be accessed via .dateTime, the stop
+            # timestamp via .stop.
+            _vt = ValueTuple(row[0], 'unix_epoch', 'group_time')
+            result['dateTime'] = weewx.units.ValueHelper(_vt, self.context,
+                                                         self.formatter, self.converter)
+            _vt = ValueTuple(row[1], 'unix_epoch', 'group_time')
+            result['stop'] = weewx.units.ValueHelper(_vt, self.context, self.formatter, self.converter)
+            # The fields from field 2 onwards will be our aggregates in obs
+            # type/aggregate order. Iterate over the fields converting to
+            # ValueHelpers and adding to our results as ValueHelpers. Our dict
+            # is keyed by obs_type then aggregate.
+            index = 2
+            # Iterate over the obs types used
+            for obs_type in obs_types:
+                result[obs_type] = dict()
+                # Now iterate over the aggregates used
+                for agg in aggregates:
+                    # Obtain the unit and unit group of our aggregate, it might
+                    # be different to the base obs type
+                    u, g = weewx.units.getStandardUnitType(db_manager.std_unit_system,
+                                                           obs_type, agg)
+                    # Contruct a ValueTuple
+                    _vt = ValueTuple(row[index], u, g)
+                    # And finally add the aggregate as a ValueHelper
+                    result[obs_type][agg] = weewx.units.ValueHelper(_vt,
+                                                                    self.context,
+                                                                    self.formatter,
+                                                                    self.converter)
+                    index += 1
+            # We can now yield our result as a dict of dicts of ValueHelpers
+            yield result
 
 
 # ===============================================================================

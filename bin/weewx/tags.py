@@ -181,8 +181,8 @@ class TimespanBinder(object):
         self.option_dict = option_dict
 
     # Iterate over vectors of selected aggregates of selected obs
-    def gen_vec(self, agg_interval=86400, obs_type=None, aggregates=None):
-        for vector_row in self.gen_vectors(agg_interval, obs_type, aggregates):
+    def gen_vec(self, agg_interval=86400, obs_types=None, aggregates=None):
+        for vector_row in self.gen_vectors(agg_interval, obs_types, aggregates):
             yield vector_row
 
     # Iterate over all records in the time period:
@@ -287,6 +287,8 @@ class TimespanBinder(object):
                       type, eg: ['min', 'max', 'avg']
         """
 
+        # Obtain a db manager
+        db_manager = self.db_lookup(self.data_binding)
         # Construct the aggregate portion of the SELECT string
         # First construct the string of aggregates of obs_type calls
         obs_str_list = []
@@ -294,19 +296,25 @@ class TimespanBinder(object):
             obs_str_list += ([a + "(" + obs_type + ")" for a in aggregates])
         # Join the individual aggregate calls to make the aggregate string
         agg_str = ",".join(obs_str_list)
+        # The SQL statement we use will depend on whether we are querying an
+        # SQLite or a MySQL database.
+        if db_manager.connection.dbtype == 'sqlite':
+            sql_str = "SELECT MIN(dateTime)-interval, MAX(dateTime), " \
+                      "{agg_str} " \
+                      "FROM archive " \
+                      "WHERE dateTime>{start} AND dateTime<={stop} " \
+                      "GROUP BY DATE(dateTime-interval,'unixepoch', 'localtime')"
+        else:
+            sql_str = "SELECT MIN(dateTime)-MIN(`interval`), MAX(dateTime), " \
+                      "{agg_str} " \
+                      "FROM archive " \
+                      "WHERE dateTime>{start} AND dateTime<={stop} " \
+                      "GROUP BY FROM_UNIXTIME(dateTime-`interval`, '%%Y-%%m-%%d')"
         # Now take the template SQL string and fill in the variables to give
         # the SQL statement we will use
-        sql_str = "SELECT MIN(dateTime)-{interval}, MAX(dateTime), " \
-                  "{agg_str} " \
-                  "FROM archive " \
-                  "WHERE dateTime>{start} AND dateTime<={stop} " \
-                  "GROUP BY DATE(dateTime-{interval},'unixepoch', 'localtime')"
-        sql_stmt = sql_str.format(interval=agg_interval,
-                                  agg_str=agg_str,
+        sql_stmt = sql_str.format(agg_str=agg_str,
                                   start=self.timespan.start,
                                   stop=self.timespan.stop)
-        # Obtain a db manager
-        db_manager = self.db_lookup(self.data_binding)
         # Iterate over the rows in the SQL query result
         for row in db_manager.genSql(sql_stmt):
             # Create a dict to hold our result, the result will be a dict of

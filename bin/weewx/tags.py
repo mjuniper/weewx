@@ -299,17 +299,17 @@ class TimespanBinder(object):
         # The SQL statement we use will depend on whether we are querying an
         # SQLite or a MySQL database.
         if db_manager.connection.dbtype == 'sqlite':
-            sql_str = "SELECT MIN(dateTime)-interval, MAX(dateTime), " \
+            sql_str = "SELECT MIN(dateTime)-interval*60, MAX(dateTime), " \
                       "{agg_str} " \
                       "FROM archive " \
                       "WHERE dateTime>{start} AND dateTime<={stop} " \
-                      "GROUP BY DATE(dateTime-interval,'unixepoch', 'localtime')"
+                      "GROUP BY DATE(dateTime-interval*60,'unixepoch', 'localtime')"
         else:
-            sql_str = "SELECT MIN(dateTime)-MIN(`interval`), MAX(dateTime), " \
+            sql_str = "SELECT MIN(dateTime)-MIN(`interval`)*60, MAX(dateTime), " \
                       "{agg_str} " \
                       "FROM archive " \
                       "WHERE dateTime>{start} AND dateTime<={stop} " \
-                      "GROUP BY FROM_UNIXTIME(dateTime-`interval`, '%%Y-%%m-%%d')"
+                      "GROUP BY FROM_UNIXTIME(dateTime-`interval`*60, '%%Y-%%m-%%d')"
         # Now take the template SQL string and fill in the variables to give
         # the SQL statement we will use
         sql_stmt = sql_str.format(agg_str=agg_str,

@@ -1,5 +1,5 @@
 #
-#    Copyright (c) 2019 Tom Keffer <tkeffer@gmail.com>
+#    Copyright (c) 2019-2020 Tom Keffer <tkeffer@gmail.com>
 #
 #    See the file LICENSE.txt for your full rights.
 #
@@ -198,29 +198,23 @@ class ArchiveTable(XType):
                 "AND a.dateTime = (SELECT MIN(dateTime) FROM archive "
                 "WHERE dateTime >= %(start)s);",
         'first': "SELECT %(obs_type)s FROM %(table_name)s "
-                 "WHERE dateTime = (SELECT MIN(dateTime) FROM %(table_name)s "
-                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  "
-                 "AND %(obs_type)s IS NOT NULL)",
+                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s "
+                 "AND %(obs_type)s IS NOT NULL ORDER BY dateTime ASC LIMIT 1",
         'firsttime': "SELECT MIN(dateTime) FROM %(table_name)s "
-                     "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  "
+                     "WHERE dateTime > %(start)s AND dateTime <= %(stop)s "
                      "AND %(obs_type)s IS NOT NULL",
         'last': "SELECT %(obs_type)s FROM %(table_name)s "
-                "WHERE dateTime = (SELECT MAX(dateTime) FROM %(table_name)s "
-                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  "
-                "AND %(obs_type)s IS NOT NULL)",
+                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s "
+                "AND %(obs_type)s IS NOT NULL ORDER BY dateTime DESC LIMIT 1",
         'lasttime': "SELECT MAX(dateTime) FROM %(table_name)s "
-                    "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  "
+                    "WHERE dateTime > %(start)s AND dateTime <= %(stop)s "
                     "AND %(obs_type)s IS NOT NULL",
         'maxtime': "SELECT dateTime FROM %(table_name)s "
-                   "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND "
-                   "%(obs_type)s = (SELECT MAX(%(obs_type)s) FROM %(table_name)s "
-                   "WHERE dateTime > %(start)s and dateTime <= %(stop)s) "
-                   "AND %(obs_type)s IS NOT NULL",
+                   "WHERE dateTime > %(start)s AND dateTime <= %(stop)s "
+                   "AND %(obs_type)s IS NOT NULL ORDER BY %(obs_type)s DESC LIMIT 1",
         'mintime': "SELECT dateTime FROM %(table_name)s "
-                   "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND "
-                   "%(obs_type)s = (SELECT MIN(%(obs_type)s) FROM %(table_name)s "
-                   "WHERE dateTime > %(start)s and dateTime <= %(stop)s) "
-                   "AND %(obs_type)s IS NOT NULL",
+                   "WHERE dateTime > %(start)s AND dateTime <= %(stop)s "
+                   "AND %(obs_type)s IS NOT NULL ORDER BY %(obs_type)s ASC LIMIT 1",
         'tderiv': "SELECT (b.%(obs_type)s - a.%(obs_type)s) / (b.dateTime-a.dateTime) "
                   "FROM archive a, archive b "
                   "WHERE b.dateTime = (SELECT MAX(dateTime) FROM archive "
@@ -252,8 +246,8 @@ class ArchiveTable(XType):
     
         returns: A ValueTuple containing the result."""
 
-        if aggregate_type not in ['sum', 'count', 'avg', 'max', 'min'] + list(
-                ArchiveTable.agg_sql_dict.keys()):
+        if aggregate_type not in ['sum', 'count', 'avg', 'max', 'min'] \
+                + list(ArchiveTable.agg_sql_dict.keys()):
             raise weewx.UnknownAggregation(aggregate_type)
 
         interpolate_dict = {
@@ -307,12 +301,15 @@ class DailySummaries(XType):
     daily_sql_dict = {
         'avg': "SELECT SUM(wsum),SUM(sumtime) FROM %(table_name)s_day_%(obs_key)s "
                "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
+        'avg_ge': "SELECT SUM((wsum/sumtime) >= %(val)s) FROM %(table_name)s_day_%(obs_key)s "
+                  "WHERE dateTime >= %(start)s AND dateTime < %(stop)s and sumtime <> 0",
+        'avg_le': "SELECT SUM((wsum/sumtime) <= %(val)s) FROM %(table_name)s_day_%(obs_key)s "
+                  "WHERE dateTime >= %(start)s AND dateTime < %(stop)s and sumtime <> 0",
         'count': "SELECT SUM(count) FROM %(table_name)s_day_%(obs_key)s "
                  "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'gustdir': "SELECT max_dir FROM %(table_name)s_day_%(obs_key)s  "
                    "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                   "AND max = (SELECT MAX(max) FROM %(table_name)s_day_%(obs_key)s "
-                   "WHERE dateTime >= %(start)s AND dateTime < %(stop)s)",
+                   "ORDER BY max DESC, maxtime ASC LIMIT 1",
         'max': "SELECT MAX(max) FROM %(table_name)s_day_%(obs_key)s "
                "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'max_ge': "SELECT SUM(max >= %(val)s) FROM %(table_name)s_day_%(obs_key)s "
@@ -323,18 +320,18 @@ class DailySummaries(XType):
                   "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'maxmintime': "SELECT mintime FROM %(table_name)s_day_%(obs_key)s  "
                       "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                      "AND min = (SELECT MAX(min) FROM %(table_name)s_day_%(obs_key)s "
-                      "WHERE dateTime >= %(start)s AND dateTime <%(stop)s)",
+                      "AND mintime IS NOT NULL "
+                      "ORDER BY min DESC, mintime ASC LIMIT 1",
         'maxsum': "SELECT MAX(sum) FROM %(table_name)s_day_%(obs_key)s "
                   "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'maxsumtime': "SELECT maxtime FROM %(table_name)s_day_%(obs_key)s  "
                       "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                      "AND sum = (SELECT MAX(sum) FROM %(table_name)s_day_%(obs_key)s "
-                      "WHERE dateTime >= %(start)s AND dateTime <%(stop)s)",
+                      "AND maxtime IS NOT NULL "
+                      "ORDER BY sum DESC, maxtime ASC LIMIT 1",
         'maxtime': "SELECT maxtime FROM %(table_name)s_day_%(obs_key)s  "
                    "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                   "AND max = (SELECT MAX(max) FROM %(table_name)s_day_%(obs_key)s "
-                   "WHERE dateTime >= %(start)s AND dateTime <%(stop)s)",
+                   "AND maxtime IS NOT NULL "
+                   "ORDER BY max DESC, maxtime ASC LIMIT 1",
         'meanmax': "SELECT AVG(max) FROM %(table_name)s_day_%(obs_key)s "
                    "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'meanmin': "SELECT AVG(min) FROM %(table_name)s_day_%(obs_key)s "
@@ -349,18 +346,18 @@ class DailySummaries(XType):
                   "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'minmaxtime': "SELECT maxtime FROM %(table_name)s_day_%(obs_key)s  "
                       "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                      "AND max = (SELECT MIN(max) FROM %(table_name)s_day_%(obs_key)s "
-                      "WHERE dateTime >= %(start)s AND dateTime <%(stop)s)",
+                      "AND maxtime IS NOT NULL "
+                      "ORDER BY max ASC, maxtime ASC ",
         'minsum': "SELECT MIN(sum) FROM %(table_name)s_day_%(obs_key)s "
                   "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'minsumtime': "SELECT mintime FROM %(table_name)s_day_%(obs_key)s  "
                       "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                      "AND sum = (SELECT MIN(sum) FROM %(table_name)s_day_%(obs_key)s "
-                      "WHERE dateTime >= %(start)s AND dateTime <%(stop)s)",
+                      "AND mintime IS NOT NULL "
+                      "ORDER BY sum ASC, mintime ASC LIMIT 1",
         'mintime': "SELECT mintime FROM %(table_name)s_day_%(obs_key)s  "
                    "WHERE dateTime >= %(start)s AND dateTime < %(stop)s "
-                   "AND min = (SELECT MIN(min) FROM %(table_name)s_day_%(obs_key)s "
-                   "WHERE dateTime >= %(start)s AND dateTime <%(stop)s)",
+                   "AND mintime IS NOT NULL "
+                   "ORDER BY min ASC, mintime ASC LIMIT 1",
         'rms': "SELECT SUM(wsquaresum),SUM(sumtime) FROM %(table_name)s_day_%(obs_key)s "
                "WHERE dateTime >= %(start)s AND dateTime < %(stop)s",
         'sum': "SELECT SUM(sum) FROM %(table_name)s_day_%(obs_key)s "
@@ -453,7 +450,7 @@ class DailySummaries(XType):
 
         elif aggregate_type in ['mintime', 'maxmintime', 'maxtime', 'minmaxtime', 'maxsumtime',
                                 'minsumtime', 'count', 'max_ge', 'max_le', 'min_ge', 'min_le',
-                                'sum_ge', 'sum_le']:
+                                'sum_ge', 'sum_le', 'avg_ge', 'avg_le']:
             # These aggregates are always integers:
             value = int(row[0])
 
@@ -581,23 +578,17 @@ class WindVec(XType):
         'count': "SELECT COUNT(dateTime), usUnits FROM %(table_name)s "
                  "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL)",
         'first': "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
-                 "WHERE dateTime = (SELECT MIN(dateTime) FROM %(table_name)s "
-                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL)",
-        'last': "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
-                "WHERE dateTime = (SELECT MAX(dateTime) FROM %(table_name)s "
-                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL)",
+                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL "
+                 "ORDER BY dateTime ASC LIMIT 1",
+        'last':  "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
+                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL "
+                 "ORDER BY dateTime DESC LIMIT 1",
         'min': "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL "
                "ORDER BY %(mag)s ASC LIMIT 1;",
-        # 'min': "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
-        #        "WHERE %(mag)s = (SELECT MIN(%(mag)s) FROM %(table_name)s "
-        #        "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL)",
         'max': "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL "
                "ORDER BY %(mag)s DESC LIMIT 1;",
-        # 'max': "SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s "
-        #        "WHERE %(mag)s = (SELECT MAX(%(mag)s) FROM %(table_name)s "
-        #        "WHERE dateTime > %(start)s AND dateTime <= %(stop)s  AND %(mag)s IS NOT NULL)",
     }
     # for types 'avg', 'sum'
     complex_sql_wind = 'SELECT %(mag)s, %(dir)s, usUnits FROM %(table_name)s WHERE dateTime > ? ' \
@@ -810,6 +801,52 @@ class WindVecDaily(XType):
         return weewx.units.ValueTuple(value, t, g)
 
 
+class XTypeTable(XType):
+    """Calculate a series for an xtype. An xtype may not necessarily be in the database, so
+    this version calculates it on the fly. Note: this version only works if no aggregation has
+    been requested."""
+
+    @staticmethod
+    def get_series(obs_type, timespan, db_manager, aggregate_type=None, aggregate_interval=None):
+        """Get a series of an xtype, by using the main archive table. Works only for no
+        aggregation. """
+
+        start_vec = list()
+        stop_vec = list()
+        data_vec = list()
+
+        if aggregate_type:
+            # This version does not know how to do aggregations, although this could be
+            # added in the future.
+            raise weewx.UnknownAggregation(aggregate_type)
+
+        else:
+            # No aggregation
+
+            std_unit_system = None
+
+            # Hit the database.
+            for record in db_manager.genBatchRecords(*timespan):
+
+                if std_unit_system:
+                    if std_unit_system != record['usUnits']:
+                        raise weewx.UnsupportedFeature("Unit system cannot change "
+                                                       "within a series.")
+                else:
+                    std_unit_system = record['usUnits']
+
+                # Given a record, use the xtypes system to calculate a value:
+                value = get_scalar(obs_type, record, db_manager)
+                start_vec.append(record['dateTime']- record['interval'] * 60)
+                stop_vec.append(record['dateTime'])
+                data_vec.append(value[0])
+
+            unit, unit_group = weewx.units.getStandardUnitType(std_unit_system, obs_type)
+
+        return (ValueTuple(start_vec, 'unix_epoch', 'group_time'),
+                ValueTuple(stop_vec, 'unix_epoch', 'group_time'),
+                ValueTuple(data_vec, unit, unit_group))
+
 # Add instantiated versions to the extension list. Order matters. We want the highly-specialized
 # versions first, because they might offer optimizations.
 xtypes.append(WindVecDaily())
@@ -817,3 +854,4 @@ xtypes.append(WindVec())
 xtypes.append(AggregateHeatCool())
 xtypes.append(DailySummaries())
 xtypes.append(ArchiveTable())
+xtypes.append(XTypeTable())

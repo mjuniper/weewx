@@ -1,6 +1,6 @@
 # coding: utf-8
 #
-#    Copyright (c) 2009-2020 Tom Keffer <tkeffer@gmail.com>
+#    Copyright (c) 2009-2021 Tom Keffer <tkeffer@gmail.com>
 #
 #    See the file LICENSE.txt for your rights.
 #
@@ -381,6 +381,10 @@ def update_config(config_dict):
     update_to_v39(config_dict)
 
     update_to_v40(config_dict)
+
+    update_to_v42(config_dict)
+
+    update_to_v43(config_dict)
 
 
 def merge_config(config_dict, template_dict):
@@ -1232,6 +1236,47 @@ def update_to_v40(config_dict):
 
     if major + minor < '400':
         config_dict['version'] = '4.0.0'
+
+
+def update_to_v42(config_dict):
+    """Update a configuration file to V4.2
+
+    - Add new engine service group xtype_services
+    """
+
+    if 'Engine' in config_dict and 'Services' in config_dict['Engine']:
+        # If it's not there already, inject 'xtype_services'
+        if 'xtype_services' not in config_dict['Engine']['Services']:
+            config_dict['Engine']['Services']['xtype_services'] = \
+                ['weewx.wxxtypes.StdWXXTypes',
+                 'weewx.wxxtypes.StdPressureCooker',
+                 'weewx.wxxtypes.StdRainRater',
+                 'weewx.wxxtypes.StdDelta']
+
+        # V4.2.0 neglected to include StdDelta. If necessary, add it:
+        if 'weewx.wxxtypes.StdDelta' not in config_dict['Engine']['Services']['xtype_services']:
+            config_dict['Engine']['Services']['xtype_services'].append('weewx.wxxtypes.StdDelta')
+
+        # Make sure xtype_services are located just before the 'archive_services'
+        reorder_scalars(config_dict['Engine']['Services'].scalars,
+                        'xtype_services',
+                        'archive_services')
+        config_dict['Engine']['Services'].comments['prep_services'] = []
+        config_dict['Engine']['Services'].comments['xtype_services'] = []
+        config_dict['Engine'].comments['Services'] = ['The following section specifies which '
+                                                      'services should be run and in what order.']
+    config_dict['version'] = '4.2.0'
+
+
+def update_to_v43(config_dict):
+    """Update a configuration file to V4.3
+
+    - Set [StdReport] / log_failure to True
+    """
+    if 'StdReport' in config_dict and 'log_failure' in config_dict['StdReport']:
+        config_dict['StdReport']['log_failure'] = True
+
+    config_dict['version'] = '4.3.0'
 
 
 def update_units(config_dict, unit_system_name, logger=None, debug=False):
